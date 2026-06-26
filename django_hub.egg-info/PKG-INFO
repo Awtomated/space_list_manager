@@ -1,0 +1,212 @@
+Metadata-Version: 2.4
+Name: django-hub
+Version: 0.1.0
+Summary: Reusable Django REST Framework package for Space, Folder, and List management
+License: MIT
+Classifier: Environment :: Web Environment
+Classifier: Framework :: Django
+Classifier: Framework :: Django :: 4.2
+Classifier: Framework :: Django :: 5.0
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Internet :: WWW/HTTP
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: django>=4.2
+Requires-Dist: djangorestframework>=3.14
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-django; extra == "dev"
+Requires-Dist: factory-boy; extra == "dev"
+
+# django-hub
+
+A reusable Django REST Framework package for Space, Folder, and List management.
+
+## Installation
+
+```bash
+pip install django-hub
+```
+
+## Setup
+
+### 1. Add to INSTALLED_APPS
+
+```python
+INSTALLED_APPS = [
+    ...
+    "django.contrib.contenttypes",
+    "rest_framework",
+    "django_hub",
+]
+```
+
+### 2. Configure required settings
+
+```python
+# Required: your project's organization model
+HUB_ORGANIZATION_MODEL = "account.Organization"
+
+# Required: callable that takes a DRF Request and returns the org instance
+HUB_GET_ORGANIZATION = "myapp.utils.get_organization"
+```
+
+Example `get_organization` implementation:
+
+```python
+# myapp/utils.py
+def get_organization(request):
+    return request.user.organization
+```
+
+### 3. Mount the URLs
+
+```python
+# urls.py
+from django.urls import path, include
+
+urlpatterns = [
+    ...
+    path("api/hub/", include("django_hub.urls")),
+]
+```
+
+### 4. Run migrations
+
+```bash
+python manage.py migrate
+```
+
+---
+
+## Optional settings
+
+```python
+# Pagination class (default: PageNumberPagination)
+HUB_PAGINATION_CLASS = "rest_framework.pagination.PageNumberPagination"
+
+# Restrict which ContentTypes can be used in Lists
+HUB_CONTENT_TYPE_WHITELIST = [
+    ("contacts", "contact"),
+    ("leads", "lead"),
+]
+
+# Map content type keys to serializer classes for ListItems
+# Key format: "<app_label>.<model>"
+HUB_SERIALIZERS_MAP = {
+    "contacts.contact": "contacts.serializers.ContactSerializer",
+    "leads.lead": "leads.serializers.LeadSerializer",
+}
+```
+
+---
+
+## API Endpoints
+
+All endpoints require authentication (`IsAuthenticated`).  
+All list endpoints support `?search=<name>` filtering.
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET/POST | `/api/hub/spaces/` | List or create spaces |
+| GET/PUT/PATCH/DELETE | `/api/hub/spaces/{id}/` | Retrieve, update, delete a space |
+| GET/POST | `/api/hub/folders/` | List or create folders |
+| GET/PUT/PATCH/DELETE | `/api/hub/folders/{id}/` | Retrieve, update, delete a folder |
+| GET/POST | `/api/hub/lists/` | List or create lists |
+| GET/PUT/PATCH/DELETE | `/api/hub/lists/{id}/` | Retrieve, update, delete a list |
+| GET/POST | `/api/hub/list-items/` | List or create list items |
+| GET/PUT/PATCH/DELETE | `/api/hub/list-items/{id}/` | Retrieve, update, delete a list item |
+
+### Query parameters
+
+- `GET /api/hub/lists/?type=space&id=5` — lists associated with Space pk=5
+- `GET /api/hub/lists/?type=folder&id=3` — lists associated with Folder pk=3
+- `GET /api/hub/list-items/?list_id=2` — items for list pk=2
+
+### Creating a Space with members
+
+```json
+POST /api/hub/spaces/
+{
+    "name": "Engineering",
+    "description": "Engineering team space",
+    "is_private": false,
+    "members": [
+        {"id": 1, "access_level": "edit"},
+        {"id": 2, "access_level": "view"}
+    ]
+}
+```
+
+---
+
+## Extending in the host project
+
+### Override destroy() to add permission checks
+
+```python
+# myapp/views.py
+from django_hub.views import SpaceViewset
+
+class MySpaceViewset(SpaceViewset):
+    def destroy(self, request, *args, **kwargs):
+        space = self.get_object()
+        if not request.user.has_perm("delete_space", space):
+            return Response(status=403)
+        return super().destroy(request, *args, **kwargs)
+```
+
+### Override get_queryset() to restrict access
+
+```python
+class MySpaceViewset(SpaceViewset):
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.filter(members__user=self.request.user)
+```
+
+### Register overridden viewsets
+
+```python
+# myapp/urls.py
+from rest_framework.routers import DefaultRouter
+from myapp.views import MySpaceViewset
+from django_hub.views import FolderViewset, ListViewset, ListItemsViewset
+
+router = DefaultRouter()
+router.register("spaces", MySpaceViewset, basename="space")
+router.register("folders", FolderViewset, basename="folder")
+router.register("lists", ListViewset, basename="list")
+router.register("list-items", ListItemsViewset, basename="list-item")
+```
+
+---
+
+## Dynamic Lists
+
+A `Lists` instance with `type="dynamic"` uses the `filters` JSONField to resolve
+items at query time. The filters are passed directly to `Model.objects.filter(**filters)`.
+
+```json
+{
+    "name": "High-priority leads",
+    "type": "dynamic",
+    "content_type": 12,
+    "filters": {"priority": "high", "status": "open"}
+}
+```
+
+Items cannot be manually added to a dynamic list — `ListItem.clean()` raises a
+`ValidationError` if attempted.
+
+---
+
+## License
+
+MIT
