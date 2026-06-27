@@ -1,7 +1,0 @@
-django>=4.2
-djangorestframework>=3.14
-
-[dev]
-pytest
-pytest-django
-factory-boy
