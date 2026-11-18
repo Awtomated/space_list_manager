@@ -1,0 +1,60 @@
+# CI for django-hub: install with the `dev` extra, flake8 with the repo's own config (setup.cfg:
+# max line length 119), pytest (settings from pyproject.toml), build the sdist and wheel, then
+# install the wheel into a clean environment and import it.
+#
+# Nothing is published; main-api installs this package from git.
+#
+# Self-contained on purpose: the shared reusable workflow in awtomated-infra (private) cannot be
+# called from this public repo, and the CI App secrets it needs are not shared with it.
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12' # requires-python >=3.10; main-api, the consumer, runs 3.12
+      - name: Install
+        id: install
+        run: pip install -q -e ".[dev]"
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          pip install -q flake8==7.5.0
+          flake8 django_hub tests
+      - name: Test
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        # `python -m pytest`, not bare `pytest`: it puts the repo root on sys.path, which is how
+        # `tests.settings` is found (the repo has no manage.py and sets no pythonpath).
+        run: python -m pytest
+      - name: Build
+        id: build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          pip install -q build
+          python -m build
+      - name: Import smoke test (built wheel, clean environment)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke"
+          "$RUNNER_TEMP/smoke/bin/pip" install -q dist/*.whl
+          cd "$RUNNER_TEMP"
+          smoke/bin/python -c "import django_hub, django_hub.conf, django_hub.apps; print('import ok from', django_hub.__file__)"
