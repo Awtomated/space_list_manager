@@ -4,9 +4,14 @@ A reusable Django REST Framework package for Space, Folder, and List management.
 
 ## Installation
 
-```bash
-pip install django-hub
+The package is not published to a package index (do not `pip install django-hub` by name).
+Install it straight from this repository, pinned to a commit (or a tag, once one exists):
+
 ```
+django-hub @ git+https://github.com/Awtomated/space_list_manager.git@<commit sha>
+```
+
+A ref of `@main` takes whatever `main` holds at the consumer's next image build, so pin a commit.
 
 ## Setup
 
@@ -178,6 +183,29 @@ items at query time. The filters are passed directly to `Model.objects.filter(**
 
 Items cannot be manually added to a dynamic list — `ListItem.clean()` raises a
 `ValidationError` if attempted.
+
+---
+
+## Development, CI and releasing
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+python -m pytest          # settings come from pyproject.toml (tests.settings)
+flake8 django_hub tests   # config in setup.cfg
+```
+
+CI (GitHub Actions, `.github/workflows/ci.yml`, Python 3.12) runs on every pull request and on
+pushes to `main`: flake8, `python -m pytest`, `python -m build`, then install the built wheel into
+a clean environment and import it.
+
+Nothing is published to a package index. To ship a new version:
+
+1. Merge the pull request into `main` (bump `version` in `pyproject.toml` and `setup.cfg` when the
+   change warrants it, and tag the merge commit if you want a named version).
+2. In the consuming repo (`main-api`), set the pinned ref in `requirements.txt` to the new commit
+   sha or tag (`django-hub @ git+https://github.com/Awtomated/space_list_manager.git@<ref>`) and
+   open a pull request there.
 
 ---
 
